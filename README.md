@@ -151,17 +151,78 @@ Response: `{ orderId, sessionId, url, created }`. Redirect the customer to `url`
 4. Printify status webhooks (`POST /api/webhooks/printify`) update
    `printifyOrderStatus` and mark the order `FULFILLED` on shipped/delivered.
 
-## Webhooks (local development)
+## Webhooks
 
-```bash
-# Stripe — forward to local server, prints a whsec_... to put in .env
-stripe listen --forward-to localhost:4000/api/webhooks/stripe
+Webhooks are how Stripe and Printify tell the backend that a payment happened or
+an order shipped. There are two endpoints (both mounted with a **raw body** so
+signatures can be verified):
 
-# Trigger a test event
-stripe trigger checkout.session.completed
-```
+- `POST /api/webhooks/stripe` — payment events
+- `POST /api/webhooks/printify` — order status events
 
-Point Printify's webhook at your public URL + `/api/webhooks/printify`.
+You register these once per provider, using your Vercel URL
+(`https://<your-project>.vercel.app`). No domain needed.
+
+### Stripe webhook
+
+1. **Get the endpoint URL**: `https://<your-project>.vercel.app/api/webhooks/stripe`.
+2. Go to <https://dashboard.stripe.com> → **Developers → Webhooks** (or
+   <https://dashboard.stripe.com/test/webhooks> for test mode) → **Add endpoint**.
+3. **Endpoint URL**: paste the URL above. **Description**: `Vantaro`.
+4. **Select events** — add exactly these:
+   - `checkout.session.completed`
+   - `payment_intent.succeeded`
+   - `payment_intent.payment_failed`
+   - `checkout.session.expired`
+5. Click **Add endpoint**. On the endpoint page, click **Reveal** under
+   *Signing secret* and copy the `whsec_...` value.
+6. In **Vercel → Settings → Environment Variables**, set
+   `STRIPE_WEBHOOK_SECRET` to that `whsec_...` value (Production), then
+   **redeploy**.
+7. **Test it**: <https://dashboard.stripe.com/test/webhooks> → your endpoint →
+   **Send test event** → choose `checkout.session.completed`. Or run a real test
+   checkout from your frontend with Stripe test cards (e.g. `4242 4242 4242 4242`).
+   A `PENDING` order should flip to `PAID` and a Printify order is created.
+
+> Use **test mode** keys/secret while testing (`sk_test_...`, `whsec_...` from the
+> test dashboard). Switch to live keys + a live-mode endpoint when going to prod.
+
+### Printify webhook
+
+1. **Get the endpoint URL**: `https://<your-project>.vercel.app/api/webhooks/printify`.
+2. Go to <https://printify.com/app> → open your **shop** → **Settings →
+   Webhooks** (or **Add webhook**).
+3. **Webhook URL**: paste the URL above.
+4. **Events**: subscribe to the order events you care about — at minimum
+   `order:updated` (and optionally `order:created`, `order:shipped`,
+   `order:delivered`, `order:cancelled`).
+5. Save. Printify will start POSTing status changes; the backend maps them to
+   `printifyOrderStatus` and marks the order `FULFILLED` on shipped/delivered.
+6. **Optional security**: set a `PRINTIFY_WEBHOOK_SECRET` env var in Vercel and
+   configure the same secret on the Printify webhook. If set, requests without a
+   matching `x-printify-secret` header are rejected with `401`.
+
+### Which env vars the webhooks need
+
+| Variable | Used by | Where to get it |
+| --- | --- | --- |
+| `STRIPE_WEBHOOK_SECRET` | Stripe endpoint | Stripe → Developers → Webhooks → endpoint → Signing secret (`whsec_...`) |
+| `PRINTIFY_WEBHOOK_SECRET` | Printify endpoint (optional) | any string you choose; must match the Printify webhook config |
+
+### Troubleshooting webhooks
+
+- **Stripe returns 4xx / "signature verification failed"** → the raw body isn't
+  reaching the handler, or `STRIPE_WEBHOOK_SECRET` is the wrong/old secret.
+  Confirm you redeployed after setting it, and that the endpoint URL is
+  `.../api/webhooks/stripe` (not `/api/checkout`).
+- **No order created after payment** → the order has no `shippingAddress`
+  (required to create the Printify order) or Printify rejected the request; check
+  Vercel **Logs** for `[printify]` lines.
+- **Printify 401** → `PRINTIFY_WEBHOOK_SECRET` is set in Vercel but the header
+  doesn't match; align them or remove the var.
+- **Testing locally instead of Vercel** (optional): `stripe listen --forward-to
+  localhost:4000/api/webhooks/stripe` prints a local `whsec_...` to use in
+  `.env`, then `stripe trigger checkout.session.completed`.
 
 ## Deploy to Vercel (no custom domain needed)
 
@@ -215,17 +276,13 @@ On the project's **Overview / Deployments** page, copy the production URL like
 purchase required. (You can rename the project in Settings to change the slug.)
 
 ### Step 6 — Register webhooks (dashboards)
-Use the Vercel URL from Step 5:
-- **Stripe** → <https://dashboard.stripe.com/test/webhooks> → **Add endpoint**:
-  `https://<your-project>.vercel.app/api/webhooks/stripe`, select events
-  `checkout.session.completed`, `payment_intent.succeeded`,
-  `payment_intent.payment_failed`, `checkout.session.expired`. Copy the
-  endpoint's **Signing secret** (`whsec_...`) into Vercel env
-  `STRIPE_WEBHOOK_SECRET`, then redeploy.
-- **Printify** → your shop → **Webhooks** → add
-  `https://<your-project>.vercel.app/api/webhooks/printify` and subscribe to
-  order events. (Optionally set `PRINTIFY_WEBHOOK_SECRET` and configure the same
-  value on the Printify webhook.)
+Set up the Stripe and Printify webhooks using your Vercel URL — full
+instructions, events to select, and which secret goes where are in the
+**[Webhooks](#webhooks)** section above. In short:
+- Stripe endpoint: `https://<your-project>.vercel.app/api/webhooks/stripe`
+  → copy its `whsec_...` into `STRIPE_WEBHOOK_SECRET` → redeploy.
+- Printify endpoint: `https://<your-project>.vercel.app/api/webhooks/printify`
+  → subscribe to order events.
 
 ### Step 7 — Verify
 Visit `https://<your-project>.vercel.app/api/health` — you should get
