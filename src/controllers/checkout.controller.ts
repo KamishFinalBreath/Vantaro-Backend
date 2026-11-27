@@ -9,16 +9,12 @@ import { createCheckoutSession } from '../services/checkout.service.js';
  */
 export const createCheckoutHandler = asyncHandler(
   async (req: Request, res: Response) => {
-    if (!req.vantaroUser || !req.clerkUser) {
+    if (!req.vantaroUser) {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
 
-    const result = await createCheckoutSession(
-      req.clerkUser.id,
-      req.vantaroUser.id,
-      req.body,
-    );
+    const result = await createCheckoutSession(req.vantaroUser.id, req.body);
 
     res.status(result.created ? 201 : 200).json(result);
   },

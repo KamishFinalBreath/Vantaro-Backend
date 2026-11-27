@@ -1,42 +1,36 @@
-import type { User } from '@prisma/client';
+import type { User as PrismaUser } from '@prisma/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { prisma } from '../config/prisma.js';
 
-export interface ClerkUserLike {
-  id: string;
-  emailAddresses?: Array<{ emailAddress: string }>;
-  primaryEmailAddressId?: string | null;
-  firstName?: string | null;
-  lastName?: string | null;
-  imageUrl?: string | null;
-}
-
-function pickEmail(user: ClerkUserLike): string | null {
-  const primary = user.primaryEmailAddressId
-    ? user.emailAddresses?.find((e) => e.emailAddress && user.primaryEmailAddressId)
-    : undefined;
-  if (primary?.emailAddress) return primary.emailAddress;
-  return user.emailAddresses?.[0]?.emailAddress ?? null;
-}
-
 /**
- * Upsert a Clerk user into our local `users` table keyed by clerkId.
- * Safe to call on every authenticated request; returns the local user row.
+ * Upsert a Supabase Auth user into our local `users` table keyed by the
+ * Supabase user id (the JWT `sub` claim). Safe to call on every request.
  */
-export async function syncUserFromClerk(clerkUser: ClerkUserLike): Promise<User> {
-  const data = {
-    email: pickEmail(clerkUser),
-    firstName: clerkUser.firstName ?? null,
-    lastName: clerkUser.lastName ?? null,
-    imageUrl: clerkUser.imageUrl ?? null,
-  };
+export async function syncUserFromSupabase(supabaseUser: SupabaseUser): Promise<PrismaUser> {
+  const metadata = (supabaseUser.user_metadata ?? {}) as Record<string, unknown>;
+  const email = supabaseUser.email ?? (metadata.email as string | undefined) ?? null;
+  const firstName =
+    (metadata.first_name as string | undefined) ??
+    (metadata.firstName as string | undefined) ??
+    null;
+  const lastName =
+    (metadata.last_name as string | undefined) ??
+    (metadata.lastName as string | undefined) ??
+    null;
+  const imageUrl =
+    (metadata.avatar_url as string | undefined) ??
+    (metadata.picture as string | undefined) ??
+    null;
+
+  const data = { email, firstName, lastName, imageUrl };
 
   return prisma.user.upsert({
-    where: { clerkId: clerkUser.id },
+    where: { id: supabaseUser.id },
     update: data,
-    create: { clerkId: clerkUser.id, ...data },
+    create: { id: supabaseUser.id, ...data },
   });
 }
 
-export async function getUserByClerkId(clerkId: string): Promise<User | null> {
-  return prisma.user.findUnique({ where: { clerkId } });
+export async function getUserById(id: string): Promise<PrismaUser | null> {
+  return prisma.user.findUnique({ where: { id } });
 }

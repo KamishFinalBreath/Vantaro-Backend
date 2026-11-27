@@ -7,12 +7,9 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().default(4000),
 
-  // Clerk
-  CLERK_SECRET_KEY: z.string().min(1, 'CLERK_SECRET_KEY is required'),
-  CLERK_PUBLISHABLE_KEY: z.string().optional(),
-
-  // Supabase / Postgres (Prisma)
-  SUPABASE_URL: z.string().url().optional(),
+  // Supabase (Auth + Postgres via Prisma)
+  SUPABASE_URL: z.string().url('SUPABASE_URL is required'),
+  SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
   SUPABASE_SERVICE_ROLE_KEY: z.string().optional(),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
 

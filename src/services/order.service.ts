@@ -4,7 +4,6 @@ import { ApiError } from '../utils/ApiError.js';
 import type { PricedCart } from '../types/cart.js';
 
 export interface CreateOrderParams {
-  clerkId: string;
   userId: string;
   idempotencyKey: string;
   cart: PricedCart;
@@ -19,13 +18,13 @@ export interface CreateOrderParams {
 export async function createIdempotentOrder(
   params: CreateOrderParams,
 ): Promise<{ order: Order; created: boolean }> {
-  const { clerkId, userId, idempotencyKey, cart } = params;
+  const { userId, idempotencyKey, cart } = params;
 
   const existing = await prisma.order.findUnique({
     where: { idempotencyKey },
   });
   if (existing) {
-    if (existing.clerkId !== clerkId) {
+    if (existing.userId !== userId) {
       throw ApiError.conflict('Idempotency key already used by another user');
     }
     return { order: existing, created: false };
@@ -45,7 +44,6 @@ export async function createIdempotentOrder(
   try {
     const order = await prisma.order.create({
       data: {
-        clerkId,
         userId,
         idempotencyKey,
         status: 'PENDING',
@@ -61,7 +59,7 @@ export async function createIdempotentOrder(
     // Concurrent request created the order first — fetch and return it.
     if (err && typeof err === 'object' && 'code' in err && (err as { code?: string }).code === 'P2002') {
       const order = await prisma.order.findUnique({ where: { idempotencyKey } });
-      if (order && order.clerkId === clerkId) {
+      if (order && order.userId === userId) {
         return { order, created: false };
       }
     }
@@ -69,18 +67,18 @@ export async function createIdempotentOrder(
   }
 }
 
-export async function getOrderForClerk(orderId: string, clerkId: string) {
+export async function getOrderForUser(orderId: string, userId: string) {
   const order = await prisma.order.findFirst({
-    where: { id: orderId, clerkId },
+    where: { id: orderId, userId },
     include: { items: true },
   });
   if (!order) throw ApiError.notFound('Order not found');
   return order;
 }
 
-export async function listOrdersForClerk(clerkId: string) {
+export async function listOrdersForUser(userId: string) {
   return prisma.order.findMany({
-    where: { clerkId },
+    where: { userId },
     orderBy: { createdAt: 'desc' },
     include: { items: true },
   });

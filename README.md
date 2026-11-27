@@ -7,7 +7,7 @@ serverless function.
 ## Stack
 
 - **Node.js + Express (TypeScript)** — `tsx` for dev, `tsc` for build
-- **Auth** — Clerk (session token verification + user syncing to DB)
+- **Auth** — Supabase Auth (access-token verification + user syncing to DB)
 - **Database** — Supabase Postgres via **Prisma** (`users`, `products`,
   `product_variants`, `orders`, `order_items`)
 - **Payments** — Stripe Checkout Sessions + signed webhooks (idempotent order creation)
@@ -26,12 +26,13 @@ src/
   config/
     env.ts                # Env validation (zod)
     prisma.ts             # Prisma client singleton
+    supabase.ts           # Supabase client + access-token verification
   middleware/
-    auth.ts               # Clerk requireClerkAuth + syncClerkUser
+    auth.ts               # requireSupabaseAuth + syncSupabaseUser
     error.ts              # Not found + global error handler
   routes/                 # products, cart, checkout, orders, webhooks
   controllers/            # request handlers (incl. Stripe/Printify webhooks)
-  services/               # clerk user sync, cart pricing, orders, checkout,
+  services/               # supabase user sync, cart pricing, orders, checkout,
                           #   stripe, printify, printify-order
   types/                  # shared types + express augmentation
   utils/                  # ApiError, asyncHandler
@@ -51,10 +52,9 @@ Copy `.env.example` to `.env` and fill in real values. **Never commit `.env`.**
 | `NODE_ENV` | `development` \| `production` \| `test` |
 | `PORT` | Local dev port (default `4000`) |
 | `PUBLIC_BASE_URL` | Storefront URL for Stripe success/cancel redirects |
-| `CLERK_SECRET_KEY` | Clerk secret key |
-| `CLERK_PUBLISHABLE_KEY` | Clerk publishable key (required by Clerk middleware) |
-| `SUPABASE_URL` | Supabase project URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `SUPABASE_URL` | Supabase project URL (Auth + Postgres) |
+| `SUPABASE_ANON_KEY` | Supabase anon/public key (verifies user access tokens) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (optional; not required by Prisma) |
 | `DATABASE_URL` | Postgres connection string used by Prisma |
 | `STRIPE_SECRET_KEY` | Stripe secret key (test or live) |
 | `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret (`whsec_...`) |
@@ -115,14 +115,15 @@ All routes are under `/api`.
 | GET | `/api/products` | no | List products (`?search=&skip=&take=`) |
 | GET | `/api/products/:id` | no | Get product with variants |
 | POST | `/api/cart/price` | no | Validate cart + authoritative pricing |
-| POST | `/api/checkout` | Clerk | Create Stripe Checkout Session (idempotent) |
-| GET | `/api/orders` | Clerk | List current user's orders |
-| GET | `/api/orders/:id` | Clerk | Get one of the user's orders |
+| POST | `/api/checkout` | Supabase | Create Stripe Checkout Session (idempotent) |
+| GET | `/api/orders` | Supabase | List current user's orders |
+| GET | `/api/orders/:id` | Supabase | Get one of the user's orders |
 | POST | `/api/webhooks/stripe` | signature | Stripe events (raw body) |
 | POST | `/api/webhooks/printify` | secret | Printify order status updates |
 
-Protected routes require a Clerk session token (`Authorization: Bearer <token>`).
-The Clerk user is synced to the local `users` table on each authenticated request.
+Protected routes require a Supabase Auth access token
+(`Authorization: Bearer <access_token>`). The Supabase user is synced to the
+local `users` table (keyed by the Supabase user id) on each authenticated request.
 
 ### Checkout request body
 
@@ -257,10 +258,9 @@ This repo is already on GitHub (`origin/main`). Vercel deploys from it.
 ### Step 4 — Add environment variables (Vercel dashboard)
 Open **Project → Settings → Environment Variables** and add **all** keys from
 `.env.example` for **Production** (and Preview if you want). Values come from:
-- **Clerk** → <https://dashboard.clerk.com> → API keys (`CLERK_SECRET_KEY`,
-  `CLERK_PUBLISHABLE_KEY`).
-- **Supabase** → Project Settings → API (`SUPABASE_URL`,
-  `SUPABASE_SERVICE_ROLE_KEY`) and Database (`DATABASE_URL`, the pooler URI).
+- **Supabase** → Project Settings → **API** (`SUPABASE_URL`, `SUPABASE_ANON_KEY`,
+  and optionally `SUPABASE_SERVICE_ROLE_KEY`) and **Database** (`DATABASE_URL`,
+  the pooler URI). The same Supabase project provides both Auth and Postgres.
 - **Stripe** → <https://dashboard.stripe.com/test/apikeys> (`STRIPE_SECRET_KEY`).
   `STRIPE_WEBHOOK_SECRET` is filled in Step 6.
 - **Printify** → <https://printify.com/app/api> (`PRINTIFY_API_KEY`,

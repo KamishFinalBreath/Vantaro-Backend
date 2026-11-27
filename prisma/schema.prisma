@@ -29,8 +29,8 @@ enum PrintifyOrderStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
-  clerkId      String   @unique
+  // id is the Supabase Auth user id (auth.users.id / JWT `sub` claim).
+  id           String   @id
   email        String?
   firstName    String?
   lastName     String?
@@ -79,7 +79,6 @@ model ProductVariant {
 model Order {
   id                    String             @id @default(cuid())
   userId                String
-  clerkId               String
   status                OrderStatus        @default(PENDING)
   printifyOrderStatus   PrintifyOrderStatus @default(PENDING)
 
@@ -107,7 +106,6 @@ model Order {
   items                 OrderItem[]
 
   @@index([userId])
-  @@index([clerkId])
   @@index([status])
 }
 

@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import {
-  requireClerkAuth,
-  syncClerkUser,
+  requireSupabaseAuth,
+  syncSupabaseUser,
 } from '../middleware/auth.js';
 import { getOrderHandler, listOrdersHandler } from '../controllers/orders.controller.js';
 
 const router = Router();
 
-router.use(requireClerkAuth, syncClerkUser);
+router.use(requireSupabaseAuth, syncSupabaseUser);
 
 router.get('/', listOrdersHandler);
 router.get('/:id', getOrderHandler);

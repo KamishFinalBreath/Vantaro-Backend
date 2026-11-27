@@ -44,7 +44,6 @@ export interface CheckoutResult {
 }
 
 export async function createCheckoutSession(
-  clerkId: string,
   userId: string,
   input: CheckoutInput,
 ): Promise<CheckoutResult> {
@@ -53,7 +52,6 @@ export async function createCheckoutSession(
 
   const cart = await priceCart(data.items);
   const { order, created } = await createIdempotentOrder({
-    clerkId,
     userId,
     idempotencyKey,
     cart,
@@ -65,7 +63,7 @@ export async function createCheckoutSession(
 
 /**
  * Creates (or reuses) a Stripe Checkout Session for an existing order.
- * Called by the controller with the authenticated clerk/user identity and by
+ * Called by the controller with the authenticated user identity and by
  * the idempotent path above.
  */
 export async function buildStripeSession(
@@ -103,11 +101,11 @@ export async function buildStripeSession(
       })),
       metadata: {
         orderId: order.id,
-        clerkId: order.clerkId,
+        userId: order.userId,
         idempotencyKey: order.idempotencyKey,
       },
       payment_intent_data: {
-        metadata: { orderId: order.id, clerkId: order.clerkId },
+        metadata: { orderId: order.id, userId: order.userId },
       },
       success_url: `${env.PUBLIC_BASE_URL}/checkout/success?order_id=${order.id}`,
       cancel_url: `${env.PUBLIC_BASE_URL}/checkout/cancel?order_id=${order.id}`,

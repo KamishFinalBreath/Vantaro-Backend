@@ -1,47 +1,49 @@
-import { clerkClient, getAuth } from '@clerk/express';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import type { NextFunction, Request, Response } from 'express';
+import { verifySupabaseToken } from '../config/supabase.js';
 import { ApiError } from '../utils/ApiError.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
-import { syncUserFromClerk } from '../services/user.service.js';
+import { syncUserFromSupabase } from '../services/user.service.js';
+
+function extractBearer(req: Request): string | null {
+  const header = req.headers.authorization;
+  if (!header) return null;
+  const [scheme, token] = header.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return token.trim();
+}
 
 /**
- * Verifies the Clerk session token (populated by the global clerkMiddleware)
- * and rejects unauthenticated requests with a JSON 401 instead of a redirect.
- * Mount on every protected route.
+ * Rejects requests without a Bearer token with a JSON 401.
+ * Mount on every protected route (before syncSupabaseUser).
  */
-export const requireClerkAuth = (req: Request, _res: Response, next: NextFunction) => {
-  const auth = getAuth(req);
-  if (!auth?.userId) {
-    next(ApiError.unauthorized('Missing or invalid Clerk session'));
+export const requireSupabaseAuth = (req: Request, _res: Response, next: NextFunction) => {
+  if (!extractBearer(req)) {
+    next(ApiError.unauthorized('Missing Bearer access token'));
     return;
   }
   next();
 };
 
 /**
- * After requireClerkAuth, loads the full Clerk user, syncs it to the local DB,
- * and attaches both `req.clerkUser` and `req.vantaroUser` for downstream use.
+ * Verifies the Supabase access token, syncs the user to the local DB, and
+ * attaches `req.supabaseUser` and `req.vantaroUser` for downstream use.
  */
-export const syncClerkUser = asyncHandler(
+export const syncSupabaseUser = asyncHandler(
   async (req: Request, _res: Response, next: NextFunction) => {
-    const auth = getAuth(req);
-    if (!auth?.userId) {
-      throw ApiError.unauthorized('Missing Clerk session');
+    const token = extractBearer(req);
+    if (!token) throw ApiError.unauthorized('Missing Bearer access token');
+
+    let supabaseUser: SupabaseUser;
+    try {
+      supabaseUser = await verifySupabaseToken(token);
+    } catch {
+      throw ApiError.unauthorized('Invalid or expired access token');
     }
 
-    const clerkUser = await clerkClient.users.getUser(auth.userId);
-    const localUser = await syncUserFromClerk({
-      id: clerkUser.id,
-      emailAddresses: clerkUser.emailAddresses.map((e) => ({
-        emailAddress: e.emailAddress,
-      })),
-      primaryEmailAddressId: clerkUser.primaryEmailAddressId,
-      firstName: clerkUser.firstName,
-      lastName: clerkUser.lastName,
-      imageUrl: clerkUser.imageUrl,
-    });
+    const localUser = await syncUserFromSupabase(supabaseUser);
 
-    req.clerkUser = clerkUser;
+    req.supabaseUser = supabaseUser;
     req.vantaroUser = localUser;
     next();
   },
