@@ -157,23 +157,83 @@ stripe trigger checkout.session.completed
 
 Point Printify's webhook at your public URL + `/api/webhooks/printify`.
 
-## Deploy to Vercel
+## Deploy to Vercel (no custom domain needed)
 
-1. Push this repo to GitHub and import it in Vercel.
-2. Add every variable from `.env.example` in **Project → Settings → Environment
-   Variables** (Production/Preview). Do **not** commit `.env`.
-3. Set `PUBLIC_BASE_URL` to the deployed storefront URL.
-4. `vercel.json` rewrites all requests to the `api/index.ts` serverless function.
-   No extra build command is required (Vercel builds with `npm run build`).
-5. After deploy, register webhook endpoints:
-   - Stripe: `https://<your-domain>/api/webhooks/stripe`
-   - Printify: `https://<your-domain>/api/webhooks/printify`
-6. `npm run prisma:push` (or migrate) against the production `DATABASE_URL`
-   before first use.
+Everything is hosted on Vercel. Vercel gives every project a free
+`https://<your-project>.vercel.app` URL — you do **not** need to buy a domain.
+Use that URL everywhere below (webhooks, `PUBLIC_BASE_URL`, etc.).
 
-> **Serverless note:** use the Supabase **connection pooler** URL (port `6543`,
-   `pgbouncer=true`) for `DATABASE_URL` in production to avoid exhausting
-   Postgres connections. A single `PrismaClient` is reused across warm invocations.
+You do the one-time setup in **two places**: the **Vercel dashboard** (hosting +
+env vars) and **your own machine** (creating the DB schema once). After that,
+Vercel runs the backend 24/7.
+
+### Step 1 — Push to GitHub (done)
+This repo is already on GitHub (`origin/main`). Vercel deploys from it.
+
+### Step 2 — Create the Supabase database (one time, your machine)
+1. Create a free project at <https://supabase.com>.
+2. In **Project Settings → Database → Connection string**, copy the **URI**
+   (the `postgresql://...` line). Use the **connection pooler / port `6543`**
+   string for `DATABASE_URL` (see the serverless note below).
+3. Put that string in a local `.env` (`cp .env.example .env`), then create the
+   tables from your machine:
+   ```bash
+   npm install
+   npm run prisma:push
+   ```
+   This only needs `DATABASE_URL` set. The tables now live in Supabase.
+
+### Step 3 — Import the project in Vercel (dashboard)
+1. Go to <https://vercel.com/new> → **Import** the `Vantaro-Backend` repo.
+2. Framework preset: **Other**. Build command: `npm run build`
+   (Vercel reads `vercel.json`; no changes needed). Leave output dir default.
+3. Click **Deploy**. Wait for it to finish.
+
+### Step 4 — Add environment variables (Vercel dashboard)
+Open **Project → Settings → Environment Variables** and add **all** keys from
+`.env.example` for **Production** (and Preview if you want). Values come from:
+- **Clerk** → <https://dashboard.clerk.com> → API keys (`CLERK_SECRET_KEY`,
+  `CLERK_PUBLISHABLE_KEY`).
+- **Supabase** → Project Settings → API (`SUPABASE_URL`,
+  `SUPABASE_SERVICE_ROLE_KEY`) and Database (`DATABASE_URL`, the pooler URI).
+- **Stripe** → <https://dashboard.stripe.com/test/apikeys> (`STRIPE_SECRET_KEY`).
+  `STRIPE_WEBHOOK_SECRET` is filled in Step 6.
+- **Printify** → <https://printify.com/app/api> (`PRINTIFY_API_KEY`,
+  `PRINTIFY_SHOP_ID`).
+- `PUBLIC_BASE_URL` → your Vercel URL, e.g. `https://vantaro-backend.vercel.app`
+  (the frontend storefront URL if you already have it deployed).
+
+After saving, **redeploy** (Deployments → ⋯ → Redeploy) so the new vars apply.
+
+### Step 5 — Get your Vercel URL
+On the project's **Overview / Deployments** page, copy the production URL like
+`https://vantaro-backend.vercel.app`. This is your backend base URL — no domain
+purchase required. (You can rename the project in Settings to change the slug.)
+
+### Step 6 — Register webhooks (dashboards)
+Use the Vercel URL from Step 5:
+- **Stripe** → <https://dashboard.stripe.com/test/webhooks> → **Add endpoint**:
+  `https://<your-project>.vercel.app/api/webhooks/stripe`, select events
+  `checkout.session.completed`, `payment_intent.succeeded`,
+  `payment_intent.payment_failed`, `checkout.session.expired`. Copy the
+  endpoint's **Signing secret** (`whsec_...`) into Vercel env
+  `STRIPE_WEBHOOK_SECRET`, then redeploy.
+- **Printify** → your shop → **Webhooks** → add
+  `https://<your-project>.vercel.app/api/webhooks/printify` and subscribe to
+  order events. (Optionally set `PRINTIFY_WEBHOOK_SECRET` and configure the same
+  value on the Printify webhook.)
+
+### Step 7 — Verify
+Visit `https://<your-project>.vercel.app/api/health` — you should get
+`{"status":"ok",...}`. Then run a test checkout from your frontend.
+
+> **Redeploy after env changes:** Vercel only picks up new environment variables
+> on a new deployment. Every time you change a var, redeploy.
+
+> **Serverless note:** always use the Supabase **connection pooler** URL
+> (host `...pooler.supabase.com`, port `6543`, `pgbouncer=true`) for
+> `DATABASE_URL` in production so serverless functions don't exhaust Postgres
+> connections. A single `PrismaClient` is reused across warm invocations.
 
 ## Scripts
 
