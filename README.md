@@ -65,6 +65,11 @@ Copy `.env.example` to `.env` and fill in real values. **Never commit `.env`.**
 
 ## Setup
 
+> **Deploying on Vercel only?** You can skip this whole section — Vercel installs
+> dependencies and builds for you, and the database is created in the Supabase
+> SQL Editor (see *Deploy to Vercel → Step 2*). The commands below are only for
+> running the backend **locally**.
+
 ```bash
 # 1. Install dependencies
 npm install
@@ -81,8 +86,9 @@ npm run prisma:generate
 
 ### Seeding products (optional)
 
-Products and variants live in the DB. Populate them from Printify by inserting
-rows (Studio: `npm run prisma:studio`) or via a seed script of your choice. Each
+Products and variants live in the DB. Add them from Printify by inserting rows
+in the Supabase dashboard → **Table Editor** (no local tooling needed), or with
+Prisma Studio (`npm run prisma:studio`) if running locally. Each
 `ProductVariant.printifyVariantId` must match the Printify variant id used at
 order creation.
 
@@ -163,25 +169,23 @@ Everything is hosted on Vercel. Vercel gives every project a free
 `https://<your-project>.vercel.app` URL — you do **not** need to buy a domain.
 Use that URL everywhere below (webhooks, `PUBLIC_BASE_URL`, etc.).
 
-You do the one-time setup in **two places**: the **Vercel dashboard** (hosting +
-env vars) and **your own machine** (creating the DB schema once). After that,
-Vercel runs the backend 24/7.
+You do the one-time setup **entirely in the browser** — the **Vercel**
+dashboard (hosting + env vars) and the **Supabase** dashboard (database). No
+commands run on your own machine. After that, Vercel runs the backend 24/7.
 
 ### Step 1 — Push to GitHub (done)
 This repo is already on GitHub (`origin/main`). Vercel deploys from it.
 
-### Step 2 — Create the Supabase database (one time, your machine)
+### Step 2 — Create the Supabase database (no local commands)
 1. Create a free project at <https://supabase.com>.
-2. In **Project Settings → Database → Connection string**, copy the **URI**
+2. Open the Supabase dashboard → **SQL Editor** → **New query**.
+3. Open `prisma/schema.sql` from this repo, copy the **entire** file, paste it
+   into the editor, and click **Run**. This creates all tables, enums, and
+   indexes. (Equivalent to `npm run prisma:push`, but done entirely in the
+   browser — nothing runs on your machine.)
+4. In **Project Settings → Database → Connection string**, copy the **URI**
    (the `postgresql://...` line). Use the **connection pooler / port `6543`**
    string for `DATABASE_URL` (see the serverless note below).
-3. Put that string in a local `.env` (`cp .env.example .env`), then create the
-   tables from your machine:
-   ```bash
-   npm install
-   npm run prisma:push
-   ```
-   This only needs `DATABASE_URL` set. The tables now live in Supabase.
 
 ### Step 3 — Import the project in Vercel (dashboard)
 1. Go to <https://vercel.com/new> → **Import** the `Vantaro-Backend` repo.
